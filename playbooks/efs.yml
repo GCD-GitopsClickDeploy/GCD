@@ -1,0 +1,82 @@
+---
+- name: Install AWS EFS CSI Driver
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Update AWS EKS kubeconfig
+      command: aws eks update-kubeconfig --name gcd-eks
+
+    - name: Add Helm Repo
+      command: helm repo add aws-efs-csi-driver https://kubernetes-sigs.github.io/aws-efs-csi-driver/
+      ignore_errors: yes
+
+    - name: Update Helm Repos
+      command: helm repo update
+      ignore_errors: yes
+      
+    - name: Install AWS EFS CSI Driver
+      command: helm upgrade -i aws-efs-csi-driver aws-efs-csi-driver/aws-efs-csi-driver --namespace kube-system --set image.repository=602401143452.dkr.ecr.ap-northeast-2.amazonaws.com/eks/aws-efs-csi-driver --set controller.serviceAccount.create=false --set controller.serviceAccount.name=efs-csi-controller-sa
+
+- name: Create AWS Resources
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Get VPC ID
+      command: aws eks describe-cluster --name gcd-eks --query "cluster.resourcesVpcConfig.vpcId" --output text
+      register: vpc_id
+
+    - name: Get VPC CIDR Range
+      command: aws ec2 describe-vpcs --vpc-ids "{{ vpc_id.stdout }}" --query "Vpcs[].CidrBlock" --output text
+      register: cidr_range
+
+    - name: Create Security Group
+      command: aws ec2 create-security-group --group-name gcdEfsSecurityGroup --description "Peter EFS security group" --vpc-id "{{ vpc_id.stdout }}" --output text
+      register: security_group
+
+    - name: Authorize Security Group Ingress
+      command: aws ec2 authorize-security-group-ingress --group-id "{{ security_group.stdout }}" --protocol tcp --port 2049 --cidr "{{ cidr_range.stdout }}"
+
+    - name: Create EFS File System
+      command: aws efs create-file-system --region ap-northeast-2 --performance-mode generalPurpose --query 'FileSystemId' --output text
+      register: file_system_id
+
+- name: Wait for EFS File System to be available
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Get EFS File System Status
+      command: aws efs describe-file-systems --file-system-id {{ file_system_id.stdout }}
+      register: file_system_status
+      until: "\"available\" in file_system_status.stdout"
+      retries: 30
+      delay: 5
+
+- name: Create EFS Mount Targets
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Get Subnet Information
+      command: >
+        aws ec2 describe-subnets
+          --filters "Name=vpc-id,Values={{ vpc_id.stdout }}"
+          --query 'Subnets[*].{SubnetId: SubnetId}'
+          --output json
+      register: subnet_info
+      changed_when: false
+
+    - name: Parse Subnet IDs
+      set_fact:
+        subnet_ids: "{{ subnet_info.stdout | from_json | json_query('[*].SubnetId') }}"
+      when: subnet_info.stdout != ""
+
+    - name: Create EFS Mount Targets
+      command: >
+        aws efs create-mount-target
+          --file-system-id {{ file_system_id.stdout }}
+          --subnet-id {{ item }}
+          --security-groups {{ security_group.stdout }}
+      with_items: "{{ subnet_ids }}"
+      when: subnet_info.stdout != ""
+    - name: 딜레이 추가
+      pause:
+        seconds: 10  # 10초 딜레이

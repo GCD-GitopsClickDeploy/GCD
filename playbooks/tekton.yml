@@ -1,0 +1,103 @@
+---
+- name: Conditional Tekton Helm Installation
+  hosts: localhost
+  vars_files:
+    - "{{ vars_file_path }}"
+
+  tasks:
+    - name: AWS EFS describe-file-systems 실행
+      command: aws efs describe-file-systems
+      register: efs_describe
+
+    - name: FileSystemId 추출
+      set_fact:
+        filesystem_id: "{{ (efs_describe.stdout | from_json).FileSystems[0].FileSystemId }}"
+
+    - name: Generate YAML file from variables
+      copy:
+        content: |
+          gitSecret:
+            username: "{{ gitSecret.username }}"
+            password: "{{ gitSecret.password }}"
+          docker:
+            configJson: "{{ docker.configJson }}"
+          efsID: "{{ filesystem_id }}"
+        dest: "./helm/tekton-resource/values.yaml"
+
+    - block:
+        - name: Install Tekton Helm
+          command:
+            cmd: helm install tekton ./helm/tekton
+          register: helm_tekton_output
+
+        - name: Print Helm Tekton Output
+          debug:
+            msg: "{{ helm_tekton_output.stdout_lines }}"
+
+        - name: Wait for all Tekton pods to be running
+          command:
+            cmd: kubectl get pods -n tekton-pipelines --field-selector=status.phase!=Running
+          register: get_pods
+          until: get_pods.stdout == ""
+          retries: 30
+          delay: 10
+
+        - name: Install Tekton resource
+          command:
+            cmd: helm install tekton-resource ./helm/tekton-resource
+          register: helm_install_output
+
+        - name: Print Helm Install Output
+          debug:
+            msg: "{{ helm_install_output.stdout_lines }}"
+
+        - name: Pause for a few seconds
+          pause:
+            seconds: 10
+
+        - name: Generate Tekton Repository YAML
+          template:
+            src: ./template/repository-template.j2
+            dest: ./helm/tekton-resource/repository.yaml
+
+        - name: install tekton polling crd
+          command:
+            cmd: kubectl apply -f https://storage.googleapis.com/tekton-releases/pipeline/previous/v0.14.2/release.yaml
+          register: install_tekton_polling_crd
+          ignore_errors: yes
+
+        - name: Print install tekton polling crd
+          debug:
+            msg: "{{install_tekton_polling_crd}}"
+            
+        - name: Pause for a few seconds
+          pause:
+            seconds: 10
+            
+        - name: install tekton polling operator
+          command:
+            cmd: kubectl apply -f https://github.com/bigkevmcd/tekton-polling-operator/releases/download/v0.4.0/release-v0.4.0.yaml
+          register: install_tekton_polling_operator
+
+        - name: Print install tekton polling operator
+          debug:
+            msg: "{{install_tekton_polling_operator}}"
+            
+        - name: Pause for a few seconds
+          pause:
+            seconds: 10
+        - name: Apply Tekton Repository YAML
+          command:
+            cmd: kubectl apply -f ./helm/tekton-resource/repository.yaml
+          register: apply_repository_output
+
+        - name: Print Apply Repository Output
+          debug:
+            msg: "{{ apply_repository_output.stdout_lines }}"
+        - name: 딜레이 추가
+          pause:
+            seconds: 10  # 10초 딜레이
+      rescue:
+        - name: Print Error Message
+          debug:
+            msg: "Tekton Helm installation failed"

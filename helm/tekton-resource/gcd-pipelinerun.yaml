@@ -1,0 +1,39 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: gcd-default-pipeline-run
+  generateName: unified-pipeline-run-
+spec:
+  serviceAccountName: git-private-sa
+  podTemplate:
+    securityContext:
+      fsGroup: 65532
+  pipelineRef:
+    name: gcd-pipeline
+  workspaces:
+    - name: shared-data
+      persistentVolumeClaim:
+        claimName: gcd-pvc 
+    - name: manifest-data
+      persistentVolumeClaim:
+        claimName: gcd-mainifest-pvc
+    - name: git-credentials
+      secret:
+        secretName: git-credentials
+  params:
+    - name: repo-url
+      value: "https://github.com/woozco/Woozco_BE.git" 
+    - name: image-reference
+      value: "dlckswn334/gcd-server" 
+    - name: revision
+      value: "main"
+    - name: manifestrepoURL
+      value: "https://github.com/jalju0804/gcd-manifest.git"
+    - name: gitUsername
+      value: "jalju0804" 
+    - name: gitEmail
+      value: "dlckswn334@naver.com" 
+    - name: gitAccessToken
+      value: "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" 
+    - name: filePath
+      value: "backend/deployment.yaml" 

@@ -1,0 +1,39 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: gcd-default-pipeline-run-"{{ application.name }}"
+  generateName: gcd-pipeline-run-
+spec:
+  serviceAccountName: git-private-sa
+  podTemplate:
+    securityContext:
+      fsGroup: 65532
+  pipelineRef:
+    name: gcd-pipeline
+  workspaces:
+    - name: shared-data
+      persistentVolumeClaim:
+        claimName: gcd-pvc 
+    - name: manifest-data
+      persistentVolumeClaim:
+        claimName: gcd-mainifest-pvc
+    - name: git-credentials
+      secret:
+        secretName: git-credentials
+  params:
+    - name: repo-url
+      value: "{{ application.gitRepoUrl }}" 
+    - name: image-reference
+      value: "{{ docker.ImageReference }}" 
+    - name: revision
+      value: "{{ manifestGitRepo.branch }}"
+    - name: manifestrepoURL
+      value: "{{ manifestGitRepo.baseURL }}"
+    - name: gitUsername
+      value: "{{ gitSecret.username }}" 
+    - name: gitEmail
+      value: "{{ gitSecret.email }}" 
+    - name: gitAccessToken
+      value: "{{ gitSecret.password }}" 
+    - name: filePath
+      value: "{{ manifestGitRepo.FilePath }}" 

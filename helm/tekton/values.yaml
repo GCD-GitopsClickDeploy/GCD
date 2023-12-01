@@ -1,0 +1,15 @@
+spec:
+  destination:
+    server: https://kubernetes.default.svc
+  source:
+    gitrepoURL: "https://github.com/Aolda/cloud-argocd-manifest"
+    repoDashboardURL: "https://eddycharly.github.io/tekton-helm"
+    dashboardChart: "dashboard"
+    dashboardTargetRevision: "0.6.2"
+    repoURL: "https://cdfoundation.github.io/tekton-helm-chart"
+    chart: "tekton-pipeline"
+    targetRevision: "1.0.2"
+  env:
+    namespace: "tekton-pipelines"
+    argocdProject: "tekton-pipelines"
+

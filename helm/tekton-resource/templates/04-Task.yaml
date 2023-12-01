@@ -1,0 +1,399 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: git-clone
+  labels:
+    app.kubernetes.io/version: "0.6"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.29.0"
+    tekton.dev/categories: Git
+    tekton.dev/tags: git
+    tekton.dev/displayName: "git clone"
+    tekton.dev/platforms: "linux/amd64,linux/s390x,linux/ppc64le,linux/arm64"
+spec:
+  workspaces: # we only use output workspace for save clone file
+    - name: output # volume for save clone file
+
+    # following workspace is for authentication, which for clone private repo. each workspace contains authentication file
+    - name: ssh-directory # workspace for using ssh
+      optional: True
+    - name: basic-auth # workspace for using git credentials
+      optional: True
+    - name: ssl-ca-directory # workspace for using  ca certificate ( https )
+      optional: True
+
+  params:
+    - name: url # repo url
+      description: Repository URL to clone from.
+      type: string
+    - name: revision
+      description: Revision to checkout. (branch, tag, sha, ref, etc...)
+      type: string
+      default: ""
+    - name: refspec
+      description: Refspec to fetch before checking out revision.
+      default: ""
+    - name: submodules
+      description: Initialize and fetch git submodules.
+      type: string
+      default: "true"
+    - name: depth
+      description: Perform a shallow clone, fetching only the most recent N commits.
+      type: string
+      default: "1"
+    - name: sslVerify
+      description: Set the `http.sslVerify` global git config. Setting this to `false` is not advised unless you are sure that you trust your git remote.
+      type: string
+      default: "true"
+    - name: subdirectory
+      description: Subdirectory inside the `output` Workspace to clone the repo into.
+      type: string
+      default: ""
+    - name: sparseCheckoutDirectories
+      description: Define the directory patterns to match or exclude when performing a sparse checkout.
+      type: string
+      default: ""
+    - name: deleteExisting
+      description: Clean out the contents of the destination directory if it already exists before cloning.
+      type: string
+      default: "true"
+    - name: httpProxy
+      description: HTTP proxy server for non-SSL requests.
+      type: string
+      default: ""
+    - name: httpsProxy
+      description: HTTPS proxy server for SSL requests.
+      type: string
+      default: ""
+    - name: noProxy
+      description: Opt out of proxying HTTP/HTTPS requests.
+      type: string
+      default: ""
+    - name: verbose
+      description: Log the commands that are executed during `git-clone`'s operation.
+      type: string
+      default: "true"
+    - name: gitInitImage # image for git init
+      description: The image providing the git-init binary that this Task runs.
+      type: string
+      default: "gcr.io/tekton-releases/github.com/tektoncd/pipeline/cmd/git-init:v0.29.0"
+    - name: userHome
+      description: |
+        Absolute path to the user's home directory. Set this explicitly if you are running the image as a non-root user or have overridden
+        the gitInitImage param with an image containing custom user configuration.
+      type: string
+      default: "/tekton/home"
+
+  results:
+    - name: commit
+      description: The precise commit SHA that was fetched by this Task.
+    - name: url
+      description: The precise URL that was fetched by this Task.
+
+  steps:
+    - name: clone
+      image: "$(params.gitInitImage)"
+      env:
+      - name: HOME
+        value: "$(params.userHome)"
+      - name: PARAM_URL
+        value: $(params.url)
+      - name: PARAM_REVISION
+        value: $(params.revision)
+      - name: PARAM_REFSPEC
+        value: $(params.refspec)
+      - name: PARAM_SUBMODULES
+        value: $(params.submodules)
+      - name: PARAM_DEPTH
+        value: $(params.depth)
+      - name: PARAM_SSL_VERIFY
+        value: $(params.sslVerify)
+      - name: PARAM_SUBDIRECTORY
+        value: $(params.subdirectory)
+      - name: PARAM_DELETE_EXISTING
+        value: $(params.deleteExisting)
+      - name: PARAM_HTTP_PROXY
+        value: $(params.httpProxy)
+      - name: PARAM_HTTPS_PROXY
+        value: $(params.httpsProxy)
+      - name: PARAM_NO_PROXY
+        value: $(params.noProxy)
+      - name: PARAM_VERBOSE
+        value: $(params.verbose)
+      - name: PARAM_SPARSE_CHECKOUT_DIRECTORIES
+        value: $(params.sparseCheckoutDirectories)
+      - name: PARAM_USER_HOME
+        value: $(params.userHome)
+      - name: WORKSPACE_OUTPUT_PATH
+        value: $(workspaces.output.path)
+      - name: WORKSPACE_SSH_DIRECTORY_BOUND
+        value: $(workspaces.ssh-directory.bound)
+      - name: WORKSPACE_SSH_DIRECTORY_PATH
+        value: $(workspaces.ssh-directory.path)
+      - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+        value: $(workspaces.basic-auth.bound)
+      - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+        value: $(workspaces.basic-auth.path)
+      - name: WORKSPACE_SSL_CA_DIRECTORY_BOUND
+        value: $(workspaces.ssl-ca-directory.bound)
+      - name: WORKSPACE_SSL_CA_DIRECTORY_PATH
+        value: $(workspaces.ssl-ca-directory.path)
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+
+        if [ "${PARAM_VERBOSE}" = "true" ] ; then
+          set -x
+        fi
+
+
+        if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ] ; then
+          cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" "${PARAM_USER_HOME}/.git-credentials"
+          cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.gitconfig" "${PARAM_USER_HOME}/.gitconfig"
+          chmod 400 "${PARAM_USER_HOME}/.git-credentials"
+          chmod 400 "${PARAM_USER_HOME}/.gitconfig"
+        fi
+
+        if [ "${WORKSPACE_SSH_DIRECTORY_BOUND}" = "true" ] ; then
+          cp -R "${WORKSPACE_SSH_DIRECTORY_PATH}" "${PARAM_USER_HOME}"/.ssh
+          chmod 700 "${PARAM_USER_HOME}"/.ssh
+          chmod -R 400 "${PARAM_USER_HOME}"/.ssh/*
+        fi
+
+        if [ "${WORKSPACE_SSL_CA_DIRECTORY_BOUND}" = "true" ] ; then
+           export GIT_SSL_CAPATH="${WORKSPACE_SSL_CA_DIRECTORY_PATH}"
+        fi
+        CHECKOUT_DIR="${WORKSPACE_OUTPUT_PATH}/${PARAM_SUBDIRECTORY}"
+
+        cleandir() {
+          # Delete any existing contents of the repo directory if it exists.
+          #
+          # We don't just "rm -rf ${CHECKOUT_DIR}" because ${CHECKOUT_DIR} might be "/"
+          # or the root of a mounted volume.
+          if [ -d "${CHECKOUT_DIR}" ] ; then
+            # Delete non-hidden files and directories
+            rm -rf "${CHECKOUT_DIR:?}"/*
+            # Delete files and directories starting with . but excluding ..
+            rm -rf "${CHECKOUT_DIR}"/.[!.]*
+            # Delete files and directories starting with .. plus any other character
+            rm -rf "${CHECKOUT_DIR}"/..?*
+          fi
+        }
+
+        if [ "${PARAM_DELETE_EXISTING}" = "true" ] ; then
+          cleandir
+        fi
+
+        test -z "${PARAM_HTTP_PROXY}" || export HTTP_PROXY="${PARAM_HTTP_PROXY}"
+        test -z "${PARAM_HTTPS_PROXY}" || export HTTPS_PROXY="${PARAM_HTTPS_PROXY}"
+        test -z "${PARAM_NO_PROXY}" || export NO_PROXY="${PARAM_NO_PROXY}"
+
+        /ko-app/git-init \
+          -url="${PARAM_URL}" \
+          -revision="${PARAM_REVISION}" \
+          -refspec="${PARAM_REFSPEC}" \
+          -path="${CHECKOUT_DIR}" \
+          -sslVerify="${PARAM_SSL_VERIFY}" \
+          -submodules="${PARAM_SUBMODULES}" \
+          -depth="${PARAM_DEPTH}" \
+          -sparseCheckoutDirectories="${PARAM_SPARSE_CHECKOUT_DIRECTORIES}"
+        cd "${CHECKOUT_DIR}"
+        RESULT_SHA="$(git rev-parse HEAD)"
+        EXIT_CODE="$?"
+        if [ "${EXIT_CODE}" != 0 ] ; then
+          exit "${EXIT_CODE}"
+        fi
+        printf "%s" "${RESULT_SHA}" > "$(results.commit.path)"
+        printf "%s" "${PARAM_URL}" > "$(results.url.path)"
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: kaniko
+  namespace: default
+  labels:
+    app.kubernetes.io/version: "0.6"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.17.0"
+    tekton.dev/categories: Image Build
+    tekton.dev/tags: image-build
+    tekton.dev/displayName: "Build and upload container image using Kaniko"
+    tekton.dev/platforms: "linux/amd64,linux/arm64,linux/ppc64le"
+spec:
+  params:
+    - name: IMAGE
+      description: Name (reference) of the image to build.
+    - name: DOCKERFILE
+      description: Path to the Dockerfile to build.
+      default: ./Dockerfile
+    - name: CONTEXT
+      description: The build context used by Kaniko.
+      default: ./
+    - name: EXTRA_ARGS
+      type: array
+      default: []
+    - name: BUILDER_IMAGE # kaniko image who build and push image
+      description: The image on which builds will run (default is v1.5.1)
+      default: gcr.io/kaniko-project/executor:v1.5.1@sha256:c6166717f7fe0b7da44908c986137ecfeab21f31ec3992f6e128fff8a94be8a5
+  workspaces:
+    - name: source
+      description: Holds the context and Dockerfile
+    - name: dockerconfig # we will not use this time, we use access token by service account
+      description: Includes a docker `config.json`
+      optional: true
+      mountPath: /kaniko/.docker
+  results:
+    - name: IMAGE_DIGEST
+      description: Digest of the image just built.
+    - name: IMAGE_URL
+      description: URL of the image just built.
+  steps:
+    - name: build-and-push
+      workingDir: $(workspaces.source.path)
+      image: $(params.BUILDER_IMAGE)
+      args:
+        - $(params.EXTRA_ARGS)
+        - --dockerfile=$(params.DOCKERFILE)
+        - --context=$(workspaces.source.path)/$(params.CONTEXT)
+        - --destination=$(params.IMAGE)
+        - --digest-file=$(results.IMAGE_DIGEST.path)
+      securityContext:
+        runAsUser: 0
+    - name: write-url
+      image: docker.io/library/bash:5.1.4@sha256:c523c636b722339f41b6a431b44588ab2f762c5de5ec3bd7964420ff982fb1d9
+      script: |
+        set -e
+        image="$(params.IMAGE)"
+        echo -n "${image}" | tee "$(results.IMAGE_URL.path)"
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: show-readme # task for show readme
+spec:
+  workspaces: # using volume, where readme is saced
+  - name: source
+  steps:
+  - name: read
+    image: alpine:latest # we use alphin image, it will use cat for show readme file in workspace volume
+    script: |
+      #!/usr/bin/env sh
+      cat $(workspaces.source.path)/README.md
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: update-argocd-app-version
+spec:
+  workspaces:
+    - name: repo
+      description: "Git 리포지토리 워크스페이스."
+  params:
+    - name: filePath
+      type: string
+      description: "업데이트할 ArgoCD 애플리케이션 YAML 파일 경로."
+  steps:
+    - name: change-permissions
+      image: alpine
+      script: |
+        #!/bin/sh
+        set -e
+
+        FILE_PATH=$(workspaces.repo.path)/$(params.filePath)
+        echo "Changing permissions for file at path: $FILE_PATH"
+        
+        # 파일에 쓰기 권한 부여
+        chmod 777 $FILE_PATH
+
+    - name: update-file
+      image: mikefarah/yq
+      script: |
+        #!/bin/sh
+        set -e
+
+        FILE_PATH=$(workspaces.repo.path)/$(params.filePath)
+        echo "Updating file at path: $FILE_PATH"
+
+        # 현재 버전 추출
+        CURRENT_VERSION=$(yq e '.metadata.labels.version' $FILE_PATH)
+        echo "Current version: $CURRENT_VERSION"
+
+        # 버전 번호 파싱 및 증가
+        BASE_VERSION=$(echo $CURRENT_VERSION | sed -E 's/(.*\.)([0-9]+)/\1/')
+        VERSION_NUM=$(echo $CURRENT_VERSION | sed -E 's/.*\.([0-9]+)/\1/')
+        
+        # 현재 시간을 기반으로 증가값 계산
+        INCREMENT_VALUE=$(date +"%H%M")
+        NEW_VERSION_NUM=$(expr $VERSION_NUM + $INCREMENT_VALUE)
+        NEW_VERSION="${BASE_VERSION}${NEW_VERSION_NUM}"
+        echo "New version: $NEW_VERSION"
+
+        # 새로운 버전으로 파일 업데이트
+        yq e '.metadata.labels.version = "'"$NEW_VERSION"'"' -i $FILE_PATH
+
+        # 파일 이름과 업데이트된 내용 출력
+        echo "Updated file: $FILE_PATH"
+        cat $FILE_PATH
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: git-push
+spec:
+  workspaces:
+    - name: repo
+      description: "Git 리포지토리 워크스페이스."
+    - name: basic-auth
+      optional: True
+      description: "Git 인증 정보를 포함하는 워크스페이스."
+  params:
+    - name: gitUsername
+      type: string
+      description: "Git 사용자 이름."
+    - name: gitEmail
+      type: string
+      description: "Git 이메일."
+    - name: gitAccessToken
+      type: string
+      description: "GitHub 액세스 토큰."
+    - name: repoUrl
+      type: string
+      description: "Git 리포지토리 URL."
+  steps:
+    - name: git-commit-push
+      image: alpine/git
+      script: |
+        #!/bin/sh
+        set -e
+        if [ "$(workspaces.basic-auth.bound)" = "true" ]; then
+          cp $(workspaces.basic-auth.path)/.git-credentials /root/.git-credentials
+          cp $(workspaces.basic-auth.path)/.gitconfig /root/.gitconfig
+          chmod 400 /root/.git-credentials
+          chmod 400 /root/.gitconfig
+        fi
+
+        set -e
+        cd $(workspaces.repo.path)
+        git config user.name "$(params.gitUsername)"
+        git config user.email "$(params.gitEmail)"
+
+        set -e
+        cd $(workspaces.repo.path)
+        
+        # 현재 Git 상태 출력
+        echo "Checking current Git status..."
+        git status
+        echo "Checking current branch..."
+        git branch
+
+        # 파일 추가 및 커밋
+        git add .
+        CURRENT_DATE=$(date +%Y-%m-%d)
+        INCREMENT_VALUE=$(date +"%H%M")
+        COMMIT_MSG="Update on ${CURRENT_DATE}, Version: ${INCREMENT_VALUE}"
+        git commit -m "${COMMIT_MSG}" || echo "No changes to commit"
+
+        # Git push 실행
+        echo "Pushing to remote..."
+        git push "$(params.repoUrl)" HEAD:main
+

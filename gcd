@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# 첫 번째 인자를 command 변수에 저장
+command=$1
+
+# 두 번째 인자를 filepath 변수에 저장
+filepath=$2
+
+# 'init' 인자에 대한 로직
+if [ "$command" = "init" ]; then
+    TERRAFORM_DIR="./provisioning/gcdEKS"
+
+    # Terraform 초기화
+    echo "Initializing Terraform..."
+    terraform -chdir="$TERRAFORM_DIR" init
+
+    # Terraform 계획
+    echo "Planning Terraform..."
+    terraform -chdir="$TERRAFORM_DIR" plan
+
+    # Terraform 적용
+    echo "Applying Terraform..."
+    terraform -chdir="$TERRAFORM_DIR" apply -auto-approve
+
+    ansible-playbook efs.yml
+        # 여기에 filepath를 사용하는 명령을 작성합니다.
+fi
+
+if [ "$command" = "add" ]; then
+    ansible-playbook playbook.yml -e "vars_file_path=$filepath"
+fi

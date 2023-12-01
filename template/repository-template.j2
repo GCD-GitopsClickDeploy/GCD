@@ -1,0 +1,43 @@
+apiVersion: polling.tekton.dev/v1alpha1
+kind: Repository
+metadata:
+  name: gcd-polling-"{{ application.name }}"
+spec:
+  url: "{{ application.gitRepoUrl }}"
+  ref: main
+  frequency: 30s
+  type: github
+  pipelineRef:
+    serviceAccountName: git-private-sa
+    name: gcd-pipeline
+    params:
+      - name: repo-url
+        expression: "'{{ application.gitRepoUrl }}'"
+      - name: image-reference
+        expression: "'{{ docker.ImageReference }}'"
+      - name: revision
+        expression: "'{{ manifestGitRepo.branch }}'"
+      - name: manifestrepoURL
+        expression: "'{{ manifestGitRepo.baseURL }}'"
+      - name: gitUsername
+        expression: "'{{ gitSecret.username }}'"
+      - name: gitEmail
+        expression: "'{{ gitSecret.email }}'"
+      - name: gitAccessToken
+        expression: "'{{ gitSecret.password }}'"
+      - name: filePath
+        expression: "'{{ manifestGitRepo.FilePath }}'"
+    workspaces:
+      - name: shared-data
+        persistentVolumeClaim:
+          claimName: gcd-pvc 
+      - name: manifest-data
+        persistentVolumeClaim:
+          claimName: gcd-mainifest-pvc
+      - name: git-credentials
+        secret:
+          secretName: git-credentials
+  auth:
+    secretRef:
+      name: git-credentials
+    key: password

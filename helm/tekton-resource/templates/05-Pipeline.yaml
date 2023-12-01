@@ -1,0 +1,87 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: gcd-pipeline
+spec:
+  workspaces:
+    - name: shared-data
+    - name: manifest-data
+  params:
+    - name: repo-url
+      type: string
+    - name: image-reference
+      type: string
+    - name: revision
+      type: string
+      default: "main"
+    - name: manifestrepoURL
+      type: string
+    - name: gitUsername
+      type: string
+    - name: gitEmail
+      type: string
+    - name: gitAccessToken
+      type: string
+    - name: filePath
+      type: string
+
+  tasks:
+    - name: fetch-source
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: shared-data
+      params:
+        - name: url
+          value: "$(params.repo-url)"
+
+    - name: build-push
+      runAfter: ["fetch-source"]
+      taskRef:
+        name: kaniko
+      workspaces:
+        - name: source
+          workspace: shared-data
+      params:
+        - name: IMAGE
+          value: "$(params.image-reference)"
+
+    - name: manifest-git-clone
+      runAfter: ["build-push"]
+      taskRef:
+        name: git-clone
+      params:
+      - name: url
+        value: "$(params.manifestrepoURL)"
+      workspaces:
+      - name: output
+        workspace: manifest-data
+
+    - name: update-argocd-app-version
+      runAfter: ["manifest-git-clone"]
+      taskRef:
+        name: update-argocd-app-version
+      params:
+        - name: filePath
+          value: "$(params.filePath)"
+      workspaces:
+        - name: repo
+          workspace: manifest-data
+
+    - name: git-push
+      runAfter: ["update-argocd-app-version"]
+      taskRef:
+        name: git-push
+      params:
+        - name: repoUrl
+          value: "$(params.manifestrepoURL)"
+        - name: gitUsername
+          value: "$(params.gitUsername)"
+        - name: gitEmail
+          value: "$(params.gitEmail)"
+        - name: gitAccessToken
+          value: "$(params.gitAccessToken)"
+      workspaces:
+        - name: repo
+          workspace: manifest-data

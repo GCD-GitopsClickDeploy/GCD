@@ -1,0 +1,46 @@
+- name: Argo CD CLI 컨테이너 및 로그인 자동화
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Kubernetes에서 Argo CD 관리자 비밀번호 가져오기
+      shell: kubectl get secret argocd-initial-admin-secret -n default -o jsonpath="{.data.password}" | base64 --decode
+      register: argocd_password
+
+    - name: Check if kubeconfig file exists
+      stat:
+        path: "{{ lookup('env', 'HOME') }}/.kube/config"
+      register: kubeconfig_file
+
+    - name: Set kubeconfig variable
+      set_fact:
+        kubeconfig_path: "{{ lookup('env', 'HOME') }}/.kube/config"
+      when: kubeconfig_file.stat.exists | bool
+
+    - name: Run the Docker container with kubeconfig
+      docker_container:
+        name: argocd-cli
+        image: argoproj/argocd:latest
+        command: sleep 3600
+        volumes:
+          - "{{ kubeconfig_path }}:/root/.kube/config"
+        state: started
+        detach: true
+        ports:
+          - "127.0.0.1:63558:63558"  # 호스트 머신의 포트 30080을 컨테이너 포트 30080으로 포워딩
+      when: kubeconfig_file.stat.exists | bool
+
+    - name: Argo CD 로그인
+      # 호스트 머신의 IP 주소와 포트를 사용하여 연결
+      command: docker exec argocd-cli argocd login localhost:30080 --username admin --password "{{ argocd_password.stdout }}"
+      register: login_output
+
+    - name: Argo CD 애플리케이션 목록 확인
+      command: docker exec argocd-cli argocd app list
+      register: app_list
+
+    - name: 결과 출력
+      debug:
+        msg:
+          - "{{ login_output.stdout }}"
+          - "{{ app_list.stdout }}"

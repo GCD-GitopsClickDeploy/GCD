@@ -1,0 +1,14 @@
+gitSecret:
+  username: ""
+  password: ""
+  email: ""
+docker:
+  configJson: ""
+  ImageReference: ""
+application:
+  name: ""
+  gitRepoUrl: ""
+manifestGitRepo: 
+  baseURL: ""
+  branch: ""
+  FilePath: ""

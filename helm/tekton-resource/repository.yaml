@@ -1,0 +1,43 @@
+apiVersion: polling.tekton.dev/v1alpha1
+kind: Repository
+metadata:
+  name: gcd-polling
+spec:
+  url: "https://github.com/woozco/Woozco_BE.git"
+  ref: main
+  frequency: 30s
+  type: github
+  pipelineRef:
+    serviceAccountName: git-private-sa
+    name: gcd-pipeline
+    params:
+      - name: repo-url
+        expression: "'https://github.com/woozco/Woozco_BE.git'"
+      - name: image-reference
+        expression: "'dlckswn334/gcd-server'"
+      - name: revision
+        expression: "'main'"
+      - name: manifestrepoURL
+        expression: "'https://github.com/jalju0804/gcd-manifest.git'"
+      - name: gitUsername
+        expression: "'jalju0804'"
+      - name: gitEmail
+        expression: "'dlckswn334@naver.com'"
+      - name: gitAccessToken
+        expression: "'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'"
+      - name: filePath
+        expression: "'backend/deployment.yaml'"
+    workspaces:
+      - name: shared-data
+        persistentVolumeClaim:
+          claimName: gcd-pvc 
+      - name: manifest-data
+        persistentVolumeClaim:
+          claimName: gcd-mainifest-pvc
+      - name: git-credentials
+        secret:
+          secretName: git-credentials
+  auth:
+    secretRef:
+      name: git-credentials
+    key: password
