@@ -1,31 +1,46 @@
 #!/bin/bash
 
-# 첫 번째 인자를 command 변수에 저장
 command=$1
 
-# 두 번째 인자를 filepath 변수에 저장
-filepath=$2
-
-# 'init' 인자에 대한 로직
 if [ "$command" = "init" ]; then
-    TERRAFORM_DIR="./provisioning/gcdEKS"
+    TERRAFORM_DIR="./provisioning"
 
-    # Terraform 초기화
     echo "Initializing Terraform..."
     terraform -chdir="$TERRAFORM_DIR" init
+   
+    echo "Applying Terraform..."
+    terraform -chdir="$TERRAFORM_DIR" apply -auto-approve
+    ansible-playbook ./playbooks/efs.yml
+fi
 
-    # Terraform 계획
-    echo "Planning Terraform..."
-    terraform -chdir="$TERRAFORM_DIR" plan
+if [ "$command" = "start" ]; then
+    TERRAFORM_DIR="./provisioning"
 
-    # Terraform 적용
+    echo "Initializing Terraform..."
+    terraform -chdir="$TERRAFORM_DIR" init
+   
     echo "Applying Terraform..."
     terraform -chdir="$TERRAFORM_DIR" apply -auto-approve
 
-    ansible-playbook efs.yml
-        # 여기에 filepath를 사용하는 명령을 작성합니다.
+    ansible-playbook ./playbooks/efs.yml
+
+    ansible-playbook ./playbooks/tekton.yml
+    ansible-playbook ./playbooks/tekton-resource.yml 
+    ansible-playbook ./playbooks/argocd.yml
+    ansible-playbook ./playbooks/argocd-resource.yml
 fi
 
 if [ "$command" = "add" ]; then
-    ansible-playbook playbook.yml -e "vars_file_path=$filepath"
+    ansible-playbook ./playbooks/tekton-resource.yml 
+    ansible-playbook ./playbooks/argocd-resource.yml
+fi
+
+if [ "$command" = "tekton" ]; then
+    ansible-playbook ./playbooks/tekton.yml 
+    ansible-playbook ./playbooks/tekton-resource.yml 
+fi
+
+if [ "$command" = "argocd" ]; then
+    ansible-playbook ./playbooks/argocd.yml
+    ansible-playbook ./playbooks/argocd-resource.yml
 fi

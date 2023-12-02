@@ -16,7 +16,7 @@ spec:
         claimName: gcd-pvc 
     - name: manifest-data
       persistentVolumeClaim:
-        claimName: gcd-mainifest-pvc
+        claimName: gcd-manifest-pvc
     - name: git-credentials
       secret:
         secretName: git-credentials

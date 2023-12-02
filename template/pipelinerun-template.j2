@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
 metadata:
-  name: gcd-default-pipeline-run-"{{ application.name }}"
+  name: gcd-default-pipeline-run-{{ application.name }}
   generateName: gcd-pipeline-run-
 spec:
   serviceAccountName: git-private-sa

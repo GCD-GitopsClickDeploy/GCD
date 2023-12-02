@@ -1,0 +1,32 @@
+---
+- name: Install and Configure Argo CD
+  hosts: localhost
+  vars_files:
+      - gcd.yml
+
+  tasks:
+      - name: Install Argo CD using Helm
+        shell: |
+            kubectl create ns argocd
+            helm install argocd argo/argo-cd -n argocd -f ../argocd/values.yaml
+
+      - name: Wait for all Argo CD pods to be in Running state
+        shell: kubectl get pods -n argocd -o=jsonpath='{.items[*].status.phase}'
+        register: pods_status
+        until: pods_status.stdout is search("Running")
+        retries: 20
+        delay: 15
+
+      - name: delay... wait a seconds
+        pause:
+            seconds: 5 
+
+      - name: Change Argo CD server service to NodePort
+        shell: |
+            kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "NodePort"}}'
+     
+      - name: delay... wait a seconds
+        pause:
+            seconds: 5 
+
+      

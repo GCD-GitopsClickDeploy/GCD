@@ -8,6 +8,7 @@ docker:
 application:
   name: ""
   gitRepoUrl: ""
+  destinationNamespace: default
 manifestGitRepo: 
   baseURL: ""
   branch: ""

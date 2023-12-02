@@ -1,7 +1,7 @@
 apiVersion: polling.tekton.dev/v1alpha1
 kind: Repository
 metadata:
-  name: gcd-polling-"{{ application.name }}"
+  name: gcd-polling-{{ application.name }}
 spec:
   url: "{{ application.gitRepoUrl }}"
   ref: main

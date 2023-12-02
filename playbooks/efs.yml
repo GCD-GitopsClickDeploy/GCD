@@ -79,4 +79,8 @@
       when: subnet_info.stdout != ""
     - name: 딜레이 추가
       pause:
-        seconds: 10  # 10초 딜레이
+        seconds: 30  
+
+    - name: Run addSecurityRule.sh script
+      command: ./addSecurityRule.sh
+

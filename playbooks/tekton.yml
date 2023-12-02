@@ -2,14 +2,19 @@
 - name: Conditional Tekton Helm Installation
   hosts: localhost
   vars_files:
-    - "{{ vars_file_path }}"
+    - gcd.yml
 
   tasks:
-    - name: AWS EFS describe-file-systems 실행
-      command: aws efs describe-file-systems
+    - name: Pause for a few seconds
+      pause:
+        seconds: 10
+
+    - name: FileSystemId Print
+      command:
+        cmd: aws efs describe-file-systems
       register: efs_describe
 
-    - name: FileSystemId 추출
+    - name: FileSystemId export
       set_fact:
         filesystem_id: "{{ (efs_describe.stdout | from_json).FileSystems[0].FileSystemId }}"
 
@@ -22,12 +27,12 @@
           docker:
             configJson: "{{ docker.configJson }}"
           efsID: "{{ filesystem_id }}"
-        dest: "./helm/tekton-resource/values.yaml"
+        dest: "../helm/tekton-resource/values.yaml"
 
     - block:
         - name: Install Tekton Helm
           command:
-            cmd: helm install tekton ./helm/tekton
+            cmd: helm install tekton ../helm/tekton
           register: helm_tekton_output
 
         - name: Print Helm Tekton Output
@@ -40,11 +45,11 @@
           register: get_pods
           until: get_pods.stdout == ""
           retries: 30
-          delay: 10
+          delay: 30
 
         - name: Install Tekton resource
           command:
-            cmd: helm install tekton-resource ./helm/tekton-resource
+            cmd: helm install tekton-resource ../helm/tekton-resource
           register: helm_install_output
 
         - name: Print Helm Install Output
@@ -54,11 +59,6 @@
         - name: Pause for a few seconds
           pause:
             seconds: 10
-
-        - name: Generate Tekton Repository YAML
-          template:
-            src: ./template/repository-template.j2
-            dest: ./helm/tekton-resource/repository.yaml
 
         - name: install tekton polling crd
           command:
@@ -85,18 +85,8 @@
             
         - name: Pause for a few seconds
           pause:
-            seconds: 10
-        - name: Apply Tekton Repository YAML
-          command:
-            cmd: kubectl apply -f ./helm/tekton-resource/repository.yaml
-          register: apply_repository_output
+            seconds: 30
 
-        - name: Print Apply Repository Output
-          debug:
-            msg: "{{ apply_repository_output.stdout_lines }}"
-        - name: 딜레이 추가
-          pause:
-            seconds: 10  # 10초 딜레이
       rescue:
         - name: Print Error Message
           debug:

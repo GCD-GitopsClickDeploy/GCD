@@ -1,7 +1,7 @@
 apiVersion: polling.tekton.dev/v1alpha1
 kind: Repository
 metadata:
-  name: gcd-polling
+  name: gcd-polling-gcd-server
 spec:
   url: "https://github.com/woozco/Woozco_BE.git"
   ref: main
@@ -24,7 +24,7 @@ spec:
       - name: gitEmail
         expression: "'dlckswn334@naver.com'"
       - name: gitAccessToken
-        expression: "'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'"
+        expression: "'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'"
       - name: filePath
         expression: "'backend/deployment.yaml'"
     workspaces:

@@ -1,0 +1,70 @@
+---
+- name: Setup Argo CD in Kubernetes Cluster
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Describe EC2 Instances
+      command: >
+        aws ec2 describe-instances \
+        --filters "Name=tag:eks:cluster-name,Values=gcd-eks" "Name=instance-state-name,Values=running" \
+        --query "Reservations[0].Instances[0].PublicIpAddress"
+      register: public_ip_raw
+      changed_when: false
+
+    - name: Remove double quotes from Public IP
+      set_fact:
+        public_ip: "{{ public_ip_raw.stdout | regex_replace('^\"|\"$', '') }}"
+
+    - name: Display Public IP
+      debug:
+        var: public_ip
+
+    - name: delay... wait a seconds
+      pause:
+        seconds: 5
+
+    - name: Kubernetes에서 Argo CD admin password
+      shell: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 --decode
+      register: argocd_password
+
+    - name: Print argocd_password
+      debug:
+        var: argocd_password.stdout
+
+    - name: delay... wait a seconds
+      pause:
+        seconds: 5
+
+    - name: Log in to Argo CD
+      shell: |
+        argocd login {{ public_ip }}:30080 --username admin --password {{ argocd_password.stdout }} --insecure
+
+    - name: Create dockerCredential from template
+      template:
+        src: ../template/dockerCredentialArgocd-template.j2
+        dest: ../argocd/argocd-docker-credential.yaml
+
+    - name: delay... wait a seconds
+      pause:
+        seconds: 5
+
+    - name: Apply the Argo CD application YAML
+      shell: |
+        kubectl apply -f ../argocd/argocd-docker-credential.yaml
+
+    - name: Add Git repository to Argo CD
+      shell: |
+        argocd repo add {{ manifestGitRepo.baseURL }} --username {{ gitSecret.username }} --password {{ gitSecret.password }} --insecure-skip-server-verification
+
+    - name: delay... wait a seconds
+      pause:
+        seconds: 5
+
+    - name: Create application.yaml from template
+      template:
+        src: ../template/application-template.j2
+        dest: ../argocd/application.yaml
+
+    - name: Apply the Argo CD application YAML
+      shell: |
+        kubectl apply -f ../argocd/application.yaml

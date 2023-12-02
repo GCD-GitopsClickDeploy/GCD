@@ -1,15 +1,7 @@
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
   cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-  token                  = data.aws_eks_cluster_auth.eks.token
-}
-# Terraform에서 helm을 통해 k8s 내 Add-on를 설치할 수 있도록 인증 정보를 제공한다.
-provider "helm" {
-  kubernetes {
-    host                   = module.eks.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-    token                  = data.aws_eks_cluster_auth.eks.token
-  }
+  token                  = data.aws_eks_cluster_auth.this.token
 }
 
 data "aws_availability_zones" "available" {}
@@ -21,8 +13,8 @@ data "aws_eks_cluster_auth" "eks" {
 }
 
 locals {
-  cluster_name        = "gcd-eks"
-  tags        = {
+  cluster_name = "gcd-eks"
+  tags         = {
     CreatedBy = "Terraform"
   }
 }
@@ -30,8 +22,8 @@ locals {
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
 
-  cluster_name                   = "${local.cluster_name}"
-  cluster_version                = 1.27
+  cluster_name                   = local.cluster_name
+  cluster_version                = 1.28
   cluster_endpoint_public_access = true
 
   vpc_id     = module.vpc.vpc_id
@@ -61,8 +53,8 @@ module "eks" {
     gcd-eks-app-ng = {
       name         = "${local.cluster_name}-app-ng"
       labels       = { nodegroup = "app" }
-      desired_size = 1
-      min_size     = 1
+      desired_size = 2
+      min_size     = 2
       max_size     = 2
     }
   }

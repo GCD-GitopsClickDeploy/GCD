@@ -1,0 +1,24 @@
+---
+- name: Conditional Tekton Helm Installation
+  hosts: localhost
+  vars_files:
+      - gcd.yml
+
+  tasks:
+      - name: Generate Tekton Repository YAML
+        template:
+            src: ../template/repository-template.j2
+            dest: ../helm/tekton-resource/repository.yaml
+
+      - name: Apply Tekton Repository YAML
+        command:
+            cmd: kubectl apply -f ../helm/tekton-resource/repository.yaml
+        register: apply_repository_output
+
+      - name: Print Apply Repository Output
+        debug:
+            msg: "{{ apply_repository_output.stdout_lines }}"
+
+      - name: delay... wait a seconds
+        pause:
+            seconds: 30 
